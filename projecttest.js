@@ -678,6 +678,7 @@ function hideAllSections() {
     document.getElementById('signIn').style.display = 'none';
     document.getElementById('signUP').style.display = 'none';
     document.getElementById('booking-root').style.display = 'none';
+    document.getElementById('booking-history').style.display = 'none';
 }
 
 function bookaRide() {
@@ -895,6 +896,27 @@ function handleBookingSubmit(e) {
         top: 0,
         behavior: 'smooth'
     });
+
+    // Save booking to Firestore
+    const userEmail = (window._fbAuth && window._fbAuth.currentUser) ?
+        window._fbAuth.currentUser.email :
+        email;
+
+    if (window._fbSaveBooking && userEmail) {
+        window._fbSaveBooking(userEmail, {
+            bookingId: bid,
+            carName: currentCarName,
+            fullName: name,
+            email: email,
+            phone: phone,
+            location: location,
+            pickupDate: fmtDate(pickupDate),
+            dropoffDate: fmtDate(dropDate),
+            ratePerDay: formatPrice(currentCarPrice),
+            days: days,
+            totalCost: formatPrice(total)
+        }).catch(err => console.error('Booking save failed:', err));
+    }
 }
 
 function brBookAnother() {
@@ -951,3 +973,147 @@ function forgotPassword() {
     };
     tryReset();
 }
+// ── Booking History ──
+function showBookingHistory() {
+    const userEmail = (window._fbAuth && window._fbAuth.currentUser) ?
+        window._fbAuth.currentUser.email :
+        null;
+
+    if (!userEmail) {
+        alert('Please sign in to view your booking history.');
+        return;
+    }
+
+    hideAllSections();
+    document.getElementById('booking-history').style.display = 'block';
+    window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+    });
+
+    // Hide all cards first
+    for (let i = 1; i <= 5; i++) {
+        document.getElementById('history-card-' + i).style.display = 'none';
+    }
+    document.getElementById('no-bookings-msg').style.display = 'none';
+    document.getElementById('booking-count').textContent = 'Loading...';
+
+    const tryLoad = () => {
+        if (!window._fbGetBookings) {
+            setTimeout(tryLoad, 100);
+            return;
+        }
+        window._fbGetBookings(userEmail)
+            .then((bookings) => {
+                const count = bookings.length;
+                document.getElementById('booking-count').textContent =
+                    count + ' Ride' + (count !== 1 ? 's' : '') + ' Booked';
+
+                if (count === 0) {
+                    document.getElementById('no-bookings-msg').style.display = 'block';
+                    return;
+                }
+
+                // Sort by most recent
+                bookings.sort((a, b) => new Date(b.bookedOn) - new Date(a.bookedOn));
+
+                // Fill up to 5 cards
+                const limit = Math.min(count, 5);
+                for (let i = 0; i < limit; i++) {
+                    const b = bookings[i];
+                    const n = i + 1;
+                    const bookedDate = b.bookedOn ?
+                        new Date(b.bookedOn).toLocaleDateString('en-IN', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric'
+                        }) :
+                        '—';
+
+                    document.getElementById('hc' + n + '-carname').textContent = b.carName || '—';
+                    document.getElementById('hc' + n + '-bid').textContent = b.bookingId || '—';
+                    document.getElementById('hc' + n + '-pickup').textContent = b.pickupDate || '—';
+                    document.getElementById('hc' + n + '-dropoff').textContent = b.dropoffDate || '—';
+                    document.getElementById('hc' + n + '-location').textContent = b.location || '—';
+                    document.getElementById('hc' + n + '-days').textContent = b.days || '—';
+                    document.getElementById('hc' + n + '-rate').textContent = b.ratePerDay || '—';
+                    document.getElementById('hc' + n + '-total').textContent = b.totalCost || '—';
+                    document.getElementById('hc' + n + '-date').textContent = bookedDate;
+                    document.getElementById('history-card-' + n).style.display = 'block';
+                }
+            })
+            .catch(err => {
+                document.getElementById('booking-count').textContent = 'Error';
+                document.getElementById('no-bookings-msg').style.display = 'block';
+                document.getElementById('no-bookings-msg').textContent = 'Failed to load bookings. Please try again.';
+                console.error(err);
+            });
+    };
+    tryLoad();
+}
+
+// ── Navbar Account Dropdown ──
+function toggleAccountDropdown() {
+    const dropdown = document.getElementById('nav-account-dropdown');
+    dropdown.classList.toggle('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const wrapper = document.querySelector('.nav-account-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        document.getElementById('nav-account-dropdown').classList.remove('open');
+    }
+});
+
+function updateNavAccount() {
+    const user = window._fbAuth && window._fbAuth.currentUser;
+    const emailEl = document.getElementById('nav-account-email');
+    const labelEl = document.getElementById('nav-account-label');
+    const logoutBtn = document.getElementById('nav-logout-btn');
+    const loginBtn = document.getElementById('nav-login-btn');
+    const historyItem = document.getElementById('nav-history-item');
+
+    if (user) {
+        labelEl.textContent = 'My Account';
+        emailEl.textContent = user.email;
+        emailEl.style.display = 'block';
+        logoutBtn.style.display = 'block';
+        loginBtn.style.display = 'none';
+        historyItem.style.display = 'block';
+    } else {
+        labelEl.textContent = 'Login';
+        emailEl.style.display = 'none';
+        logoutBtn.style.display = 'none';
+        loginBtn.style.display = 'block';
+        historyItem.style.display = 'none';
+    }
+}
+
+function navLogout() {
+    if (window._fbAuth) {
+        window._fbAuth.signOut().then(() => {
+            isLoggedIn = false;
+            document.getElementById('nav-account-dropdown').classList.remove('open');
+            updateNavAccount();
+            backtohome();
+        });
+    }
+}
+
+function closeDropdownAndShowHistory() {
+    document.getElementById('nav-account-dropdown').classList.remove('open');
+    showBookingHistory();
+}
+
+// Update nav on auth state change
+const navAuthCheck = () => {
+    if (!window._fbOnAuthStateChanged) {
+        setTimeout(navAuthCheck, 100);
+        return;
+    }
+    window._fbOnAuthStateChanged((user) => {
+        updateNavAccount();
+    });
+};
+navAuthCheck();
