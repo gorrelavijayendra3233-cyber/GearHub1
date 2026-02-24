@@ -11,7 +11,6 @@
             scroll-behavior: smooth;
         }
     </style>
-    <!-- Firebase -->
     <script type="module">
         import {
             initializeApp
@@ -25,11 +24,21 @@
             signInWithPopup,
             sendPasswordResetEmail
         } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import {
+            getDatabase,
+            ref,
+            push,
+            query,
+            orderByChild,
+            equalTo,
+            get
+        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAsj3TvqdxnJHYiQgfBNp3TFH9ZE9Yu6_0",
             authDomain: "gearhub-1b2ed.firebaseapp.com",
             projectId: "gearhub-1b2ed",
+            databaseURL: "https://gearhub-1b2ed-default-rtdb.asia-southeast1.firebasedatabase.app",
             storageBucket: "gearhub-1b2ed.firebasestorage.app",
             messagingSenderId: "427552964136",
             appId: "1:427552964136:web:6aa0ac39a5105c5728bf1d",
@@ -38,17 +47,38 @@
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
+        const db = getDatabase(app);
         const googleProvider = new GoogleAuthProvider();
 
-        // Expose auth functions globally so projecttest.js can use them
         window._fbAuth = auth;
+        window._fbDb = db;
         window._fbCreateUser = (email, password) => createUserWithEmailAndPassword(auth, email, password);
         window._fbSignIn = (email, password) => signInWithEmailAndPassword(auth, email, password);
         window._fbOnAuthStateChanged = (cb) => onAuthStateChanged(auth, cb);
         window._fbGoogleSignIn = () => signInWithPopup(auth, googleProvider);
         window._fbResetPassword = (email) => sendPasswordResetEmail(auth, email);
 
-        // Check if already logged in on page load
+        window._fbSaveBooking = (email, bookingData) => {
+            const safeEmail = email.replace(/\./g, '_');
+            const bookingsRef = ref(db, 'bookings/' + safeEmail);
+            return push(bookingsRef, {
+                ...bookingData,
+                bookedOn: new Date().toISOString()
+            });
+        };
+
+        window._fbGetBookings = async (email) => {
+            const safeEmail = email.replace(/\./g, '_');
+            const bookingsRef = ref(db, 'bookings/' + safeEmail);
+            const snapshot = await get(bookingsRef);
+            if (!snapshot.exists()) return [];
+            const data = snapshot.val();
+            return Object.keys(data).map(key => ({
+                id: key,
+                ...data[key]
+            }));
+        };
+
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 window.isLoggedIn = true;
@@ -92,6 +122,25 @@
                         <a class="nav-link" href="#openwheel">Open Wheel</a>
                         <a class="nav-link" href="#coupe">Coupe</a>
                         <a class="nav-link" href="#aboutus">About Us!</a>
+
+                        <!-- Account Button -->
+                        <div class="nav-account-wrapper">
+                            <button class="nav-account-btn" onclick="toggleAccountDropdown()">
+                                <span id="nav-account-label">Login</span>
+                                <span class="nav-account-arrow">▼</span>
+                            </button>
+                            <div class="nav-account-dropdown" id="nav-account-dropdown">
+                                <p class="nav-account-email" id="nav-account-email"></p>
+                                <div class="nav-dropdown-divider" id="nav-history-item">
+                                    <button class="nav-dropdown-btn" onclick="closeDropdownAndShowHistory()">Booking History</button>
+                                </div>
+                                <div class="nav-dropdown-divider">
+                                    <button class="nav-dropdown-btn nav-logout-btn" id="nav-logout-btn" onclick="navLogout()">Logout</button>
+                                    <button class="nav-dropdown-btn nav-login-btn" id="nav-login-btn" onclick="oldAcclogin()">Sign In</button>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </nav>
@@ -226,10 +275,9 @@
             <div id="aboutus" style="padding:40px; background:#f4f4f4; margin:20px;">
                 <h2 style="text-align:center; margin-bottom:20px;">About Us</h2>
                 <p style="text-align:center; max-width:700px; margin:auto; margin-bottom:30px;">
-                    We are a passionate team of computer science students who created
-                    “GearHub – Speed Unleashed” as a part of our Web Development project.
-                    Our goal is to showcase the power, speed, and performance of popular cars
-                    through a clean and responsive static website.
+                    GearHub – Speed Unleashed is a premium car rental platform designed for automobile enthusiasts who demand performance and luxury.
+                    We offer a curated selection of elite vehicles across four categories — Muscle Cars, Sports Cars, Open Wheel Cars, and Coupe Cars — each representing the pinnacle of automotive engineering.
+                    Our goal is simple: to deliver not just a rental service, but an unforgettable driving experience defined by speed, precision, and passion.
                 </p>
 
                 <div style="display:flex; justify-content:center; gap:40px; flex-wrap:wrap;">
@@ -319,7 +367,7 @@
                             Continue with Google
                         </Button>
                         <p id='googleSignUpError' style='color:red; text-align:center; font-size:14px;'></p>
-                        <p class='accreate'>Already have an account? <button id='goToSignInBtn' onclick='oldAcclogin()'>Sign in</button></p>
+                        <p class='accreate'>Already have an account? <button id='goToSignInBtn' class='forgotEl mr-2' onclick='oldAcclogin()'>Sign in</button></p>
                     </div>
                     <div style="text-align:center; margin-top:16px; margin-bottom:10px;">
                     </div>
@@ -369,7 +417,7 @@
                         Continue with Google
                     </Button>
                     <p id='googleSignInError' style='color:red; text-align:center; font-size:14px;'></p>
-                    <p class='accreate'>Don't have an account? <button id='goToSignUpBtn' onclick='goToSignUp()'>Create One</button></p>
+                    <p class='accreate'>Don't have an account? <button id='goToSignUpBtn' class='forgotEl mr-2' onclick='goToSignUp()'>Create One</button></p>
                 </div>
                 <div style="text-align:center; margin-top:16px; margin-bottom:10px;">
                 </div>
@@ -396,17 +444,17 @@
                             <div class="br-grid-2" style="margin-bottom:20px;">
                                 <div class="br-field">
                                     <label for="br-full-name">Full Name</label>
-                                    <input type="text" id="br-full-name" placeholder="John Doe" required />
+                                    <input type="text" id="br-full-name" placeholder="Full name" required />
                                 </div>
                                 <div class="br-field">
                                     <label for="br-email">Email</label>
-                                    <input type="email" id="br-email" placeholder="john@example.com" required />
+                                    <input type="email" id="br-email" placeholder="Email address" required />
                                 </div>
                             </div>
 
                             <div class="br-field">
                                 <label for="br-phone">Phone Number</label>
-                                <input type="tel" id="br-phone" placeholder="+1 (555) 000-0000" required />
+                                <input type="tel" id="br-phone" placeholder="+91 00000-00000" required />
                             </div>
                         </section>
 
@@ -417,7 +465,7 @@
                             <h2 class="section-title">Trip Details</h2>
 
                             <div class="br-field" style="margin-bottom:20px;">
-                                <label for="br-pickup-loc">Pickup Location</label>
+                                <label for="br-pickup-loc">Location</label>
                                 <input type="text" id="br-pickup-loc" placeholder="Airport, City Center…" required />
                             </div>
 
@@ -530,6 +578,7 @@
 
                     <button class="btn-another" onclick="brBookAnother()">＋ Book Another Ride</button>
                     <button class='btn-another' onclick='backtohome()'>Go to Front Page</button>
+                    <button class='btn-another' onclick='showBookingHistory()'>View My Bookings</button>
 
                     <div style="text-align:center; margin-top:14px; margin-bottom:10px;">
                     </div>
@@ -537,6 +586,104 @@
                 </div>
             </div>
 
+        </div>
+
+        <!-- Booking History Section -->
+        <div id="booking-history">
+            <div class="bh-wrapper">
+                <div class="bh-header">
+                    <h2 class="bh-title">My Booking History</h2>
+                    <div>
+                        <span id="booking-count" class="bh-count"></span>
+                        <button onclick="backtohome()" class="bh-back-btn">← Back</button>
+                    </div>
+                </div>
+
+                <!-- No bookings message -->
+                <p id="no-bookings-msg" class="bh-no-bookings">No bookings found. Book your first ride!</p>
+
+                <!-- Booking Cards -->
+                <div id="history-card-1" class="history-card">
+                    <div class="hc-header">
+                        <span class="hc-carname" id="hc1-carname"></span>
+                        <span class="hc-bid" id="hc1-bid"></span>
+                    </div>
+                    <div class="hc-grid">
+                        <div><span class="hc-label">Pickup:</span> <span id="hc1-pickup"></span></div>
+                        <div><span class="hc-label">Drop-off:</span> <span id="hc1-dropoff"></span></div>
+                        <div><span class="hc-label">Location:</span> <span id="hc1-location"></span></div>
+                        <div><span class="hc-label">Days:</span> <span id="hc1-days"></span></div>
+                        <div><span class="hc-label">Rate:</span> <span id="hc1-rate"></span></div>
+                        <div class="hc-total">Total: <span id="hc1-total"></span></div>
+                    </div>
+                    <div class="hc-date">Booked on: <span id="hc1-date"></span></div>
+                </div>
+
+                <div id="history-card-2" class="history-card">
+                    <div class="hc-header">
+                        <span class="hc-carname" id="hc2-carname"></span>
+                        <span class="hc-bid" id="hc2-bid"></span>
+                    </div>
+                    <div class="hc-grid">
+                        <div><span class="hc-label">Pickup:</span> <span id="hc2-pickup"></span></div>
+                        <div><span class="hc-label">Drop-off:</span> <span id="hc2-dropoff"></span></div>
+                        <div><span class="hc-label">Location:</span> <span id="hc2-location"></span></div>
+                        <div><span class="hc-label">Days:</span> <span id="hc2-days"></span></div>
+                        <div><span class="hc-label">Rate:</span> <span id="hc2-rate"></span></div>
+                        <div class="hc-total">Total: <span id="hc2-total"></span></div>
+                    </div>
+                    <div class="hc-date">Booked on: <span id="hc2-date"></span></div>
+                </div>
+
+                <div id="history-card-3" class="history-card">
+                    <div class="hc-header">
+                        <span class="hc-carname" id="hc3-carname"></span>
+                        <span class="hc-bid" id="hc3-bid"></span>
+                    </div>
+                    <div class="hc-grid">
+                        <div><span class="hc-label">Pickup:</span> <span id="hc3-pickup"></span></div>
+                        <div><span class="hc-label">Drop-off:</span> <span id="hc3-dropoff"></span></div>
+                        <div><span class="hc-label">Location:</span> <span id="hc3-location"></span></div>
+                        <div><span class="hc-label">Days:</span> <span id="hc3-days"></span></div>
+                        <div><span class="hc-label">Rate:</span> <span id="hc3-rate"></span></div>
+                        <div class="hc-total">Total: <span id="hc3-total"></span></div>
+                    </div>
+                    <div class="hc-date">Booked on: <span id="hc3-date"></span></div>
+                </div>
+
+                <div id="history-card-4" class="history-card">
+                    <div class="hc-header">
+                        <span class="hc-carname" id="hc4-carname"></span>
+                        <span class="hc-bid" id="hc4-bid"></span>
+                    </div>
+                    <div class="hc-grid">
+                        <div><span class="hc-label">Pickup:</span> <span id="hc4-pickup"></span></div>
+                        <div><span class="hc-label">Drop-off:</span> <span id="hc4-dropoff"></span></div>
+                        <div><span class="hc-label">Location:</span> <span id="hc4-location"></span></div>
+                        <div><span class="hc-label">Days:</span> <span id="hc4-days"></span></div>
+                        <div><span class="hc-label">Rate:</span> <span id="hc4-rate"></span></div>
+                        <div class="hc-total">Total: <span id="hc4-total"></span></div>
+                    </div>
+                    <div class="hc-date">Booked on: <span id="hc4-date"></span></div>
+                </div>
+
+                <div id="history-card-5" class="history-card">
+                    <div class="hc-header">
+                        <span class="hc-carname" id="hc5-carname"></span>
+                        <span class="hc-bid" id="hc5-bid"></span>
+                    </div>
+                    <div class="hc-grid">
+                        <div><span class="hc-label">Pickup:</span> <span id="hc5-pickup"></span></div>
+                        <div><span class="hc-label">Drop-off:</span> <span id="hc5-dropoff"></span></div>
+                        <div><span class="hc-label">Location:</span> <span id="hc5-location"></span></div>
+                        <div><span class="hc-label">Days:</span> <span id="hc5-days"></span></div>
+                        <div><span class="hc-label">Rate:</span> <span id="hc5-rate"></span></div>
+                        <div class="hc-total">Total: <span id="hc5-total"></span></div>
+                    </div>
+                    <div class="hc-date">Booked on: <span id="hc5-date"></span></div>
+                </div>
+
+            </div>
         </div>
 
 
